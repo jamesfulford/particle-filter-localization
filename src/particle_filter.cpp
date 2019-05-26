@@ -30,7 +30,23 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
    * NOTE: Consult particle_filter.h for more information about this method 
    *   (and others in this file).
    */
-  num_particles = 0;  // TODO: Set the number of particles
+  num_particles = 1000;  // TODO: Set the number of particles
+  
+  std::default_random_engine seed;
+
+  std::normal_distribution<double> dist_x(x, std[0]);
+  std::normal_distribution<double> dist_y(y, std[1]);
+  std::normal_distribution<double> dist_theta(theta, std[2]);
+
+  for ( int i = 0; i < num_particles; i++) {
+    Particle p = Particle();
+    p.x = dist_x(seed);
+    p.y = dist_y(seed);
+    p.theta = dist_theta(seed);
+    p.weight = 1.0;
+    
+    particles.push_back(p);
+  }
 
 }
 
@@ -85,7 +101,7 @@ void ParticleFilter::resample() {
    * NOTE: You may find std::discrete_distribution helpful here.
    *   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
    */
-
+	
 }
 
 void ParticleFilter::SetAssociations(Particle& particle, 
