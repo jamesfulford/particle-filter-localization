@@ -15,6 +15,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <limits>
 
 #include "helper_functions.h"
 
@@ -59,7 +60,49 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
    *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
+  std::default_random_engine seed;
 
+  std::normal_distribution<double> noise_x(0, std_pos[0]);
+  std::normal_distribution<double> noise_y(0, std_pos[1]);
+  std::normal_distribution<double> noise_theta(0, std_pos[2]);
+
+  for (int i = 0; i < particles.size(); i++) {
+    Particle p = particles[i];
+    
+    // Update position of particle
+    if (std::abs(yaw_rate) < 0.0001) { // if yaw rate is (basically) 0
+      // TODO(jamesfulford): Did I swap X and Y here?
+      p.x += velocity * cos(p.theta);
+      p.y += velocity * sin(p.theta);
+      // Theta stays the same
+    } else {
+      p.x += (velocity / yaw_rate) * (sin(p.theta + (yaw_rate * delta_t)) - sin(p.theta));
+      p.y += (velocity / yaw_rate) * (cos(p.theta) - cos(p.theta + (yaw_rate * delta_t)));
+      p.theta += yaw_rate * delta_t;
+    }
+    
+    // Add gaussian noise to particle position due to movement
+    p.x += noise_x(seed);
+    p.y += noise_y(seed);
+    p.theta += noise_theta(seed);
+  }
+}
+
+double pythagorean (double x1, double y1, double x2, double y2) {
+  return sqrt(pow(x1 - x2, 2) + pow(y1 - y2, 2));
+}
+
+double distance (LandmarkObs o, Particle p) {
+  return pythagorean(o.x, o.y, p.x, p.y);
+}
+
+double multivariate_gaussian (double x, double y, double base_x, double base_y, double stdx, double stdy) {
+  return (
+    pow(M_E, -(
+      (pow(y - base_y, 2) / (2 * pow(stdy, 2)))
+       + (pow(x - base_x, 2) / (2 * pow(stdx, 2)))
+    )) / (2 * M_PI * stdx * stdy)
+  );
 }
 
 void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted, 
@@ -72,6 +115,23 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
    *   probably find it useful to implement this method and use it as a helper 
    *   during the updateWeights phase.
    */
+//   for (int i = 0; i < observations.size(); i++) {
+//     LandmarkObs o = observations[i]; // where the sensor thinks a landmark is
+
+//     double min_dist = std::numeric_limits<double>::max();
+//     LandmarkObs min_pred;
+//     for (int j = 0; j < predicted.size(); j++) {
+//       LandmarkObs p = predicted[j]; // where a landmark is predict
+//       double d = distance(p, o);
+//       if (d < min_dist) {
+//         min_pred = p;
+//         min_dist = d;
+//       }
+//     }
+//     if (min_pred !== null) {
+//       o.id = min_pred.id;
+//     }
+//   }
 
 }
 
@@ -91,7 +151,35 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    *   and the following is a good resource for the actual equation to implement
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
+  for (int i = 0; i < particles.size(); i++) {
+    Particle p = particles[i];
+    p.weight = 1.0;
+    
+    for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
+      if (pythagorean(p.x, p.y, map_landmarks.landmark_list[j].x_f, map_landmarks.landmark_list[j].y_f) > sensor_range) {
+        continue; // skip landmarks outside of sensor range
+      }
 
+      // Find observation closest to j'th landmark
+      LandmarkObs closest_obs_map;
+      double min_dist = std::numeric_limits<double>::max();
+      for (int k = 0; k < observations.size(); k++) {
+        LandmarkObs o = observations[k];
+
+        LandmarkObs o_map = LandmarkObs();
+        o_map.x = p.x + (cos(p.theta) * o.x) - (sin(p.theta) * o.y);
+        o_map.y = p.y + (sin(p.theta) * o.x) + (cos(p.theta) * o.y);
+        
+        double d = pythagorean(o_map.x, o_map.y, map_landmarks.landmark_list[j].x_f, map_landmarks.landmark_list[j].y_f);
+        if (d < min_dist) {
+          closest_obs_map = o_map;
+          min_dist = d;
+        }
+      }
+      // Update particle's weight with probability of this landmark being observed by its closed observation
+      p.weight *= multivariate_gaussian(closest_obs_map.x, closest_obs_map.y, map_landmarks.landmark_list[j].x_f, map_landmarks.landmark_list[j].y_f, std_landmark[0], std_landmark[1]);
+    };
+  }
 }
 
 void ParticleFilter::resample() {
